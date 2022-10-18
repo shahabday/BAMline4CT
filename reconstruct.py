@@ -35,12 +35,18 @@ all ideas to be implemented later are marked with :
 
 '''
 
+from copy import copy
 import logging
-import numpy as np 
+
+import numpy as np
+from py import process
+from pytest import param 
 import tomopy
 from projection_import import *
 from scipy.ndimage import rotate
 from scipy.ndimage import interpolation
+from timeit import default_timer as timer #just for development purposes 
+
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -55,11 +61,46 @@ INFO
 DEBUG
 NOTSET
 """
+try:
+    import torch
+    logging.info("PyTorch Imported succesfully")
+    torch_exists = True
+except ModuleNotFoundError as err:
+    torch_exists = False
+    # Error handling
+    print(err)
+
+
+#pretty printing 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 
 class Reconstruction:
 
 
-    def __init__(self, ProjectionFile, scan_type = 'on-the-fly'  ) :
+    def __init__(self, ProjectionFile, gpu = False  ) :
+
+        self.gpu_is_available = False
+        if torch_exists == True :
+            if gpu == True : 
+                if torch.cuda.is_available() : 
+                    torch.device("cuda")
+                    self.gpu_is_available = True
+                    self.gpu_name = torch.cuda.get_device_name(0)
+                    logging.info("GPU : {} ".format(self.gpu_name))
+                else: 
+                    logging.info(" cannot find cuda ... ") 
+        else:
+            logging.info("Torch is not properly imported ... check installation")
         
         #initialize variables
 
@@ -79,10 +120,15 @@ class Reconstruction:
 
         else :#!@ elif for other file types
             logging.info("reconstruction for non hdf5 is not implemented yet")
- 
+
         self.isNormalized_one_slice = False  # to check if we have normalized one slice already
 
-        self.scan_type = scan_type #on the fly or step scan 
+        #testing purpose 
+        #timing processing duration 
+        
+        self.copy_time  =[] 
+        self.p_time = []
+
         
         
         
@@ -147,6 +193,30 @@ class Reconstruction:
         self.last_zero_proj = last_zero_proj
 
         return self.speed_W
+
+
+    def ring_artifact (self, ):
+        """
+        ring artifact handeling : 
+        developed originally by Henning Markoetter. 
+        re-written for CPU and GPU by shahabeddin dayani
+
+        implementation using GPU :
+        the tensor stored in GPU memory having normallized projections, 
+        should be fed to this function to save copying time from memory to GPU 
+        
+
+        """
+
+        #2D projections sum =mean(normalized porjections )
+        #assert proper dimensions 
+        # filter the 2D projection sum using median filter 
+        # correction map vol = projection sum / projection sum filtered
+        # correction map vol = clip 0.9 and 1.1  limit values between 0.9 and 1.1
+
+        #update normalized volume :
+        # divide (normalized vol , correction map volume)
+        pass
 
 
     def on_the_fly_one_slice (self, reco_settings):
@@ -227,6 +297,8 @@ class Reconstruction:
         #ring artifact handling 
         #!@ will be implemented later
         #   a function for ring artifact should be developed. and upon request , called here
+
+
 
         #calculating rotation speed : 
         poly_coeff = np.polyfit(np.arange(len(graph[round((graph.shape[0] + 1) /4) : round((graph.shape[0] + 1) * 3/4) ])), graph[round((graph.shape[0] + 1) /4) : round((graph.shape[0] + 1) * 3/4) ], 1, rcond=None, full=False, w=None, cov=False)
@@ -325,16 +397,60 @@ class Reconstruction:
 
         return self.one_slice_reconstructed
 
+    def normalization_gpu( self, FFs_vol,Sino_vol):
+        """
+        normalization using gpu 
+
+        """
+        torch.cuda.empty_cache() 
+        #pytorch accepts following dtypes : loat64, float32, float16, complex64, complex128, int64, int32, int16, int8, uint8, and bool
+        start = timer()
+        FFs_vol = torch.from_numpy(FFs_vol.astype(np.float32)).cuda() #converting to tensor must be int32
+        Sino_vol = torch.from_numpy(Sino_vol.astype(np.float32)).cuda()
+        end = timer()
+        print('copy to GPU : ')
+        print(end - start)
+        
+        self.copy_time.append(end - start)
+        #self.copy_time = end - start
+
+
+        # using mean function is only possible using floating dtype 
+        #this has a bug . probably a lot of negative values exist due to float and also 
+        # a lot of division by zeros 
+        start = timer()
+        FFmean_vol = torch.mean(FFs_vol, dim=0) # 
+        Norm_vol = torch.divide(Sino_vol - self.DarkFieldValue, FFmean_vol - self.DarkFieldValue - self.backIlluminationValue)
+        Norm_vol = Norm_vol.cpu().detach().numpy().astype(np.float32)
+        end = timer()
+        print('elapsed time on GPU : ')
+        print(end - start)
+        self.p_time.append(end - start)
+        #self.p_time = end - start
+        
+
+        return Norm_vol
+
+        
 
     #On-the-fly essential calculation function :
     def normalization_cpu (self,FFs_vol,Sino_vol ):
         # input : 
         # FFs volume
         # Sinogram Volume
-
+        start= timer()
         FFmean_vol = np.mean(FFs_vol, axis=0)
-
+        
+        
         Norm_vol = np.divide(Sino_vol - self.DarkFieldValue, FFmean_vol - self.DarkFieldValue - self.backIlluminationValue)
+
+        end = timer()
+        print('elapsed time on CPU : ')
+        print(end - start)
+        self.p_time.append(end - start)
+        #self.p_time = end - start
+
+
         return Norm_vol
 
 
@@ -375,6 +491,7 @@ class Reconstruction:
         reco_settings["n_cores"]
         reco_settings["block_size"]
         reco_settings["pixel_size"]
+        reco_settings["GPU"] = True, False
 
 
         save_settings  : 
@@ -491,14 +608,21 @@ class Reconstruction:
             #make Sinogram
             logging.info('Flat Field Normalization of block: {} '.format( counter +1))
             print ("number_of_selected_slices :" ,number_of_selected_slices )
-            print ("slices_to_reco :" ,slices_to_reco )
-            print ("slices_to_reco[0] + (self.block_size* (counter +1)) :" ,slices_to_reco[0] + (self.block_size* (counter +1))) 
+            #print ("slices_to_reco :" ,slices_to_reco )
+            #print ("slices_to_reco[0] + (self.block_size* (counter +1)) :" ,slices_to_reco[0] + (self.block_size* (counter +1))) 
 
             # end of fancy slicing is : first_slice + (blocksize* (counter +1))
             FFs_vol = self.FileObject.vol_proxy[0:self.number_of_FFs - 1, slices_to_reco[0] + (self.block_size* (counter)): slices_to_reco[0] + (self.block_size* (counter +1)), :]
             Sino_vol = self.FileObject.vol_proxy[self.number_of_FFs: -self.number_of_FFs, slices_to_reco[0] + (self.block_size* (counter )): slices_to_reco[0] + (self.block_size* (counter +1)), :]
-            self.Norm_vol = self.normalization_cpu(FFs_vol,Sino_vol)
+            if self.gpu_is_available == True and reco_settings["GPU"] == True : 
+                self.Norm_vol = self.normalization_gpu(FFs_vol,Sino_vol)
+            else: 
+                self.Norm_vol = self.normalization_cpu(FFs_vol,Sino_vol)
             logging.info('Normalized volume created ')
+            print(bcolors.WARNING +'copy_time : {} '.format(self.copy_time) + bcolors.ENDC  )
+            print ("proccess_tiem : " ,self.p_time )
+            
+            
             
             #
 
@@ -596,6 +720,7 @@ if __name__ == "__main__":
 
     import matplotlib.pylab as plt
 
+    import pandas as pd
 
     FileObject = ProjectionFile("A:\\BAMline-CT\\2022\\2022_03\\Pch_21_09_10\\220317_1754_95_Pch_21_09_10_____Z40_Y8300_42000eV_10x_250ms\\220317_1754_95_00001.h5")
     _,metadata = FileObject.openFile(volume = "/entry/data/data" , metadata = ['/entry/instrument/NDAttributes/CT_MICOS_W'])
@@ -615,7 +740,7 @@ if __name__ == "__main__":
     reco_setting["filter_name"] = "shepp"
     reco_setting["pixel_size"] = 0.72
 
-    recoObject=Reconstruction(FileObject)
+    recoObject=Reconstruction(FileObject  , gpu=True)
     #slice = recoObject.on_the_fly_one_slice(reco_setting)
     #writer = FileWrite("D:\\shahab\\HDF\\Writer\\3\\oneSlice")
     #writer.saveTiff(slice, "one-slice-slice_10")
@@ -631,9 +756,10 @@ if __name__ == "__main__":
     reco_settings["Offset_Angle"] = 0
     reco_settings["reco_algorithm"] = "gridrec"
     reco_settings["filter_name"] = "shepp"
-    reco_settings["n_cores"] = 8
-    reco_settings["block_size"] = 30
+    reco_settings["n_cores"] = 16
+    reco_settings["block_size"] = 60
     reco_settings["pixel_size"] = 0.72
+    reco_settings["GPU"] = True 
 
 
     #save_settings  : 
@@ -641,8 +767,60 @@ if __name__ == "__main__":
     save_settings["dtype"] = "float32"# or float32
     save_settings["fileType"] = "tif"
     save_settings["chunking"] = None
-    save_settings["save_folder"] = "D:\\shahab\\HDF\\Writer\\4"
+    save_settings["save_folder"] = "D:\\shahab\\HDF\\Writer\\{}"
 
-    recoObject.on_the_fly_volume_reco(reco_settings,save_settings) #this saves automatically the volume 
+    key_list = ["GPU" ,"block_size" , "save_folder" ]
+    param_list = [True, 10 , "Gpu_10"] 
+
+    def modify_setting (value):
+        key_list = ["GPU" ,"block_size" , "save_folder" ]
+        for k,v in zip(key_list,value):
+            if  k == "save_folder":
+                save_settings[k]= "D:\\shahab\\HDF\\Writer\\{}".format(v)
+            else: 
+                reco_settings[k] = v
+                print ("this is my settings ")
+                print(k , v )
+
+
+
+
+    param_list = [[True, 10 , "Gpu_10"] , [True , 20 , "GPU_20"] , [True, 30 , "Gpu_30"] , [True, 50 , "Gpu_50"] ,[True, 16 , "Gpu_16"] , [True , 32 , "GPU_32"] , [True, 48 , "Gpu_48"] , [True, 64 , "Gpu_64"] ,
+    [False, 10 , "Cpu_10"] , [False , 20 , "CPU_20"] , [False, 30 , "Cpu_30"] , [False, 50 , "Cpu_50"],[False, 16 , "Cpu_16"] , [False , 32 , "CPU_32"] , [False, 48 , "Cpu_48"] , [False, 64 , "Cpu_64"] ]
+
+
+    #param_list = [[True, 30 , "Gpu_10"] , [False , 30 , "GPU_20"] ]
+
+    #test speed of GPU operation and CPU operation 
+    o_p_time = []
+    o_c_time = []
+    total_time = [ ]
+    print ('start the looooooooop')
+    for params in param_list : 
+        print('making the empty ')
+       
+        
+        modify_setting(params)
+
+        s = timer()
+        recoObject.on_the_fly_volume_reco(reco_settings,save_settings, slices_to_reco=(1, 500)) #this saves automatically the volume 
+        e = timer()
+        total_time.append(e-s)
+        print (params)
+        print(bcolors.WARNING +'copy_time : {} '.format(recoObject.copy_time) + bcolors.ENDC  )
+        print ("proccess_tiem : " ,recoObject.p_time )
+
+        o_p_time.append(recoObject.p_time)
+        o_c_time.append(recoObject.copy_time)
+        recoObject.p_time = []
+        recoObject.copy_time = []
+
+    pd.DataFrame(param_list).to_excel("prarm.xlsx")
+    pd.DataFrame(o_p_time).to_excel("p_time.xlsx")
+    pd.DataFrame(o_c_time).to_excel("c_time.xlsx")
+    pd.DataFrame(total_time).to_excel("total_time.xlsx")
+
+
+    
 
 
