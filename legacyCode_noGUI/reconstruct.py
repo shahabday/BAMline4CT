@@ -668,6 +668,7 @@ class Reconstruction:
             
 
             if (save_settings["fileType"] == "tif" or save_settings["fileType"] == "tiff"):
+                print("*******************remove . . . this is for debugging **********")
                 #save in tiffstacks 
                 # write the reconstructed block to disk as TIF-file
                 #def saveTiff_volume (self, vol , fname , ind_offset = 0 , type= 'float32'):
@@ -676,7 +677,8 @@ class Reconstruction:
                                  type = save_settings["dtype"])
 
 
-            elif (save_settings["fileType"] == "h5") : 
+            elif (save_settings["fileType"] == "h5" or save_settings["fileType"]=="hdf5") : 
+                print("*******************remove . . . this is for debugging **********")
                 #save in hdf File
                 #write_hdf_volume (self, vol , fname , chunking = None , dataset_name = "Volume"):
                 writer.write_hdf_volume(slices, self.FileObject.filename , 
@@ -765,7 +767,7 @@ if __name__ == "__main__":
     #save_settings  : 
     save_settings = {}
     save_settings["dtype"] = "float32"# or float32
-    save_settings["fileType"] = "tif"
+    save_settings["fileType"] = "h5"
     save_settings["chunking"] = None
     save_settings["save_folder"] = "D:\\shahab\\HDF\\Writer\\{}"
 
@@ -776,7 +778,7 @@ if __name__ == "__main__":
         key_list = ["GPU" ,"block_size" , "save_folder" ]
         for k,v in zip(key_list,value):
             if  k == "save_folder":
-                save_settings[k]= "D:\\shahab\\HDF\\Writer\\{}".format(v)
+                save_settings[k]= "E:\\sdayani\\shahab\\HDF\\Writer\\{}".format(v)
             else: 
                 reco_settings[k] = v
                 print ("this is my settings ")
