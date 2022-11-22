@@ -116,7 +116,10 @@ class Reconstruction:
         else :#!@ elif for other file types
             logging.info("reconstruction for non hdf5 is not implemented yet")
 
-        self.isNormalized_one_slice = False  # to check if we have normalized one slice already
+        self.isNormalized_one_slice = False  # to check if we have normalized one slice already 
+        self.calculated_W_once = False # to check if we already calculated the speed once 
+        
+
 
         #testing purpose 
         #timing processing duration 
@@ -160,7 +163,6 @@ class Reconstruction:
 
     #On-the-fly essential calculation function :
     def calculate_rotation_speed ( self , angle_list ): 
-         
 
         #uses following variables to calculate img rotation speed : 
         #
@@ -177,6 +179,12 @@ class Reconstruction:
         self.speed_W = poly_coeff[0] #rotation-speed[°/img]
 
         
+
+        return self.speed_W
+
+    def calculate_last_zero_projection (self, angle_list):
+        #essential on the fly function 
+        graph= np.array(angle_list[self.number_of_FFs:-self.number_of_FFs])
         #find rotation start
         i = 0
         while i < graph.shape[0]:
@@ -185,8 +193,6 @@ class Reconstruction:
             i = i + 1
         
         self.last_zero_proj = last_zero_proj
-
-        return self.speed_W
 
 
     def ring_artifact (self, Norm_vol , radius ):
@@ -247,10 +253,29 @@ class Reconstruction:
 
         #reco_setting :  is a dictionary with all variables needed for reconstruction and reading the data 
 
+        #if the angle list is not given : 
+        # speed_w cannot be calculated 
+        # speed_w should be given in the reco_settings["speed_w"]
 
-         
 
+        #check if angle list is available or should we read speed_w from the user input 
         angle_list_dir = reco_settings['angle_list_dir'] # path in HDF5 file where angle list are stored
+        
+        if ( self.FileObject.metadata_exists):
+
+            try: # meta data might exists but angle_list_dir might not exists
+
+                if self.FileObject.metadata_dic[angle_list_dir] != "Not exists" : 
+                    angle_list = self.FileObject.metadata_dic[angle_list_dir]
+                
+                    self.angle_list_exists = True
+                else : 
+                    self.angle_list_exists = False
+            except:
+                self.angle_list_exists = False
+        else:
+            self.angle_list_exists=False
+            
         
         if self.isNormalized_one_slice == True : # if we already did a FF normalization, check wheather any of these parameters are changed :
 
@@ -280,26 +305,7 @@ class Reconstruction:
         self.ring_radius = reco_settings["ring_radius"]
 
 
-
         
-
-        angle_list = self.FileObject.metadata_dic[angle_list_dir]
-        graph= np.array(angle_list[self.number_of_FFs:-self.number_of_FFs])
-
-        
-        #find rotation start
-        i = 0
-        while i < graph.shape[0]:
-            if round(graph[i]) == 0:  # notice the last projection at below 0.5°
-                last_zero_proj = i + 3  # assumes 3 images for speeding up the motor
-            i = i + 1
-
-        
-        #estimate COR
-        if COR == 0:
-            COR = (round(self.FileObject.vol_proxy.shape[2] / 2))
-
-
         #get Normalized Sinogram from one_slice_normalization(self)
         #check if already normallized or need to be normallized again as it takes time
         # this needs to be called if any of these variables change : 
@@ -319,23 +325,85 @@ class Reconstruction:
             if self.ring_radius != 0 :
                 self.Norm=self.ring_artifact(self.Norm,self.ring_radius)
             
-
-        #calculating rotation speed : 
-        poly_coeff = np.polyfit(np.arange(len(graph[round((graph.shape[0] + 1) /4) : round((graph.shape[0] + 1) * 3/4) ])), graph[round((graph.shape[0] + 1) /4) : round((graph.shape[0] + 1) * 3/4) ], 1, rcond=None, full=False, w=None, cov=False)
-        print('Polynom coefficients {} \t Detected angular step per image: {} '.format(poly_coeff,poly_coeff[0]))
-        self.speed_W = poly_coeff[0] #rotation-speed[°/img]
-
-
-        #reconstruction :
+        
         number_of_projections = self.Norm.shape[0]
+        
+        # calculation of rotation speed and last zero projection 
+
+        #calculate it once using the w data if available, after that , user will decide for the final W speed. 
+
+
 
         
+
+        if self.angle_list_exists : 
+
+            #if it is already calculated once, dont calculate it again . 
+            if not self.calculated_W_once :
+                #when angle list is avialable 
+                #already put the list in to thie angle_list variable 
+                #angle_list = self.FileObject.metadata_dic[angle_list_dir]
+                #calculate rotation speed : 
+                
+                self.calculate_rotation_speed(angle_list)
+                #speed_W and last zero proj are stored in object variable
+                self.calculate_last_zero_projection(angle_list)
+                last_zero_proj = self.last_zero_proj
+                self.calculated_W_once = True
+
+            else: # if speed is already calculated once 
+                self.speed_W = reco_settings['speed_w']
+
+        else :
+            # when angle list not avialable or speed is already calculated once 
+            self.speed_W = reco_settings['speed_w']
+
+
         #check if the scan was 180° or 360°
         if number_of_projections * self.speed_W >= 270:
             number_of_used_projections = round(360 / self.speed_W)
         else:
             #print('smaller than 3/2 Pi')
             number_of_used_projections = round(180 / self.speed_W)
+
+
+        if not self.angle_list_exists: # if angle list doesnt exists
+            calculte_last_zero_manually=True
+        else:# if angle list does exist
+            if self.calculated_W_once : 
+                calculte_last_zero_manually=False
+                self.calculate_last_zero_projection(angle_list)
+                last_zero_proj = self.last_zero_proj
+
+            else: # dont calculate last zero manually, only if we have list of angles and it is not yet calculated 
+                calculte_last_zero_manually=False
+
+
+        if calculte_last_zero_manually:
+            #calculate last zero projection 
+            
+            self.last_zero_proj = number_of_projections-  number_of_used_projections
+            last_zero_proj = self.last_zero_proj
+            print (last_zero_proj , number_of_projections , number_of_used_projections)
+            # check if calculations based on speed_w makes sense : 
+            #number of used projections < number of projections :
+            if number_of_projections <= number_of_used_projections :
+                logging.warning ("speed of W is not in the right range . Speed is lower than possible ")
+                #assume a 180 degree tomo and calculate a speed W to prevent crashing the app : 
+                self.speed_W = round(180/number_of_projections)
+                last_zero_proj = 0 
+
+
+
+
+        #estimate COR
+        if COR == 0:
+            COR = (round(self.FileObject.vol_proxy.shape[2] / 2))
+
+
+
+
+        #reconstruction :
 
         
         # create list with all projection angles  based on radian 
@@ -473,7 +541,6 @@ class Reconstruction:
 
         return Norm_vol
 
-
     def prepare_reco_metadata (self , *metadatas):
         """
         preparing a table of metadata for printing, saving in hdf5 or csv 
@@ -501,10 +568,6 @@ class Reconstruction:
             
         return meta_out
 
-
-
-        
-
     def on_the_fly_volume_reco (self, reco_settings, save_settings, slices_to_reco= 'all'):
         """
         in this function the whole volume or part of the volume storted in FileObject will be reconstructed
@@ -516,6 +579,8 @@ class Reconstruction:
                         its a tuple (first_slice, last_slice)
         reco_settings :
         reco_settings['angle_list_dir'] # path in HDF5 file where angle list are stored
+        reco_settings['manual_speed'] : bool , if True, calculations will be based on user input speed_w
+        reco_settings['speed_w']
         reco_settings["number_of_FFs"] # this is needed in other functions 
         reco_settings["DarkFieldValue"]# this is needed in other functions 
         reco_settings["backIlluminationValue"]# this is needed in other functions 
@@ -563,18 +628,15 @@ class Reconstruction:
             slices_to_reco = reco_all()
             logging.info("Reconstruct whole volume is selected ")
 
-                
-
-
-        
         if save_settings["dtype"] == "uint16":
+            
             #check for low and high value cropping
-            if not "low_value" in save_settings.keys():
+            if not "intensity_low" in save_settings.keys():
                 logging.warning ("int 16 conversion needs low value")
-                save_settings["low_value"] = 0
-            if not "high_value" in save_settings.keys():
+                save_settings["intensity_low"] = 0
+            if not "intensity_high" in save_settings.keys():
                 logging.warning ("int 16 conversion needs high value")
-                save_settings["high_value"] = 65535
+                save_settings["intensity_high"] = 65535
         
 
 
@@ -602,10 +664,21 @@ class Reconstruction:
         image_width = self.FileObject.vol_proxy.shape[2]
         self.extend_FOV = (2 * (abs(COR - image_width/2))/ (image_width)) + 0.15
 
-        #calculate speed W
-        angle_list = self.FileObject.metadata_dic[angle_list_dir]
-        self.calculate_rotation_speed(angle_list)
+
         
+
+        self.manual_speed = reco_settings["manual_speed"] # bool variable 
+
+        if not self.manual_speed :# if manual_speed is False, calculations of speed w will be automatically done : 
+            #calculate speed W
+            angle_list = self.FileObject.metadata_dic[angle_list_dir]
+            self.calculate_rotation_speed(angle_list)
+            #calculate last zero projection ; 
+            self.calculate_last_zero_projection(angle_list)
+        
+        else:
+            self.speed_W = reco_settings['speed_w']
+
         #calculate number of projections 
         # using FFs we should calculate number of projectiosn 
         self.number_of_projections = self.FileObject.vol_proxy.shape[0] - 2*self.number_of_FFs
@@ -617,6 +690,11 @@ class Reconstruction:
             #('smaller than 3/2 Pi')
             self.number_of_used_projections = round(180 / self.speed_W)
         logging.info('number of used projections {}'.format( self.number_of_used_projections))
+
+        #if manual speed is being used : we have to calculate last zero projection : 
+        if self.manual_speed: 
+            self.last_zero_proj = self.number_of_projections - self.number_of_used_projections
+            
 
         #create list with projection angles
         new_list = (np.arange(self.number_of_used_projections) * self.speed_W + Offset_Angle) * np.pi / 180
@@ -701,7 +779,7 @@ class Reconstruction:
             if save_settings["dtype"] == "uint16" : 
                 #convert to 16 bits
                 #16-bit integer conversion
-                ima3 = 65535 * (slices - save_settings["low_value"]) / (save_settings["high_value"] - save_settings["low_value"])
+                ima3 = 65535 * (slices - save_settings["intensity_low"]) / (save_settings["intensity_high"] - save_settings["intensity_low"])
                 ima3 = np.clip(ima3, 1, 65534)
                 slices = ima3.astype(np.uint16)
 
@@ -754,7 +832,7 @@ class Reconstruction:
 
         #use another module for saveing 
         
-if __name__ == "__main__" : 
+if __name__ == "__mjhain__" : 
     #test Writer and metadata writer : 
     
     from projection_import import *
@@ -787,7 +865,7 @@ if __name__ == "__main__" :
     writer.write_hdf_metadata(meta,"test3.h5")
     
 
-if __name__ == "__ffmain__": 
+if __name__ == "__main__": 
 
     # test the whole module 
 
@@ -795,107 +873,114 @@ if __name__ == "__ffmain__":
 
     from projection_import import * 
 
-    import matplotlib.pylab as plt
+    import matplotlib.pyplot as plt
 
     import pandas as pd
+
+    test = 1
+     
 
     FileObject = ProjectionFile("A:\\BAMline-CT\\2022\\2022_03\\Pch_21_09_10\\220317_1754_95_Pch_21_09_10_____Z40_Y8300_42000eV_10x_250ms\\220317_1754_95_00001.h5")
     _,metadata = FileObject.openFile(volume = "/entry/data/data" , metadata = ['/entry/instrument/NDAttributes/CT_MICOS_W'])
 
+    if test == 1 :
 
-    reco_setting ={} 
-    reco_setting['angle_list_dir'] = '/entry/instrument/NDAttributes/CT_MICOS_W'
-    reco_setting["number_of_FFs"] = 20 
-    reco_setting["slice_number"]  = 10
-    reco_setting["DarkFieldValue"] = 200
-    reco_setting["backIlluminationValue"] = 0
-    reco_setting["COR"] = 1213
-    reco_setting["offset_Angle"] = 0
-    reco_setting["angle_range"] = '180 - axis centered'
-    reco_setting["extend_FOV_fixed_ImageJ_Stream"] = 0.25
-    reco_setting["reco_algorithm"] = 'gridrec'
-    reco_setting["filter_name"] = "shepp"
-    reco_setting["pixel_size"] = 0.72
+        reco_setting ={} 
+        reco_setting['angle_list_dir'] = '/entry/instrument/NDAttributes/CT_MICOS_W'
+        reco_setting["number_of_FFs"] = 20 
+        reco_setting["slice_number"]  = 10
+        reco_setting["DarkFieldValue"] = 200
+        reco_setting["backIlluminationValue"] = 0
+        reco_setting["COR"] = 1213
+        reco_setting["offset_Angle"] = 0
+        reco_setting["angle_range"] = '180 - axis centered'
+        reco_setting["extend_FOV_fixed_ImageJ_Stream"] = 0.25
+        reco_setting["reco_algorithm"] = 'gridrec'
+        reco_setting["filter_name"] = "shepp"
+        reco_setting["pixel_size"] = 0.72
+        reco_setting["ring_radius"] = 50
 
-    recoObject=Reconstruction(FileObject  , gpu=True)
-    #slice = recoObject.on_the_fly_one_slice(reco_setting)
-    #writer = FileWrite("D:\\shahab\\HDF\\Writer\\3\\oneSlice")
-    #writer.saveTiff(slice, "one-slice-slice_10")
+        recoObject=Reconstruction(FileObject  , gpu=True)
+        slice = recoObject.on_the_fly_one_slice(reco_setting)
+        plt.imshow(slice)
+
+        #writer = FileWrite("D:\\shahab\\HDF\\Writer\\3\\oneSlice")
+        #writer.saveTiff(slice, "one-slice-slice_10")
     
+    if test == 2 :
+        reco_settings={}
 
-    reco_settings={}
-
-    reco_settings['angle_list_dir']='/entry/instrument/NDAttributes/CT_MICOS_W'# path in HDF5 file where angle list are stored
-    reco_settings["number_of_FFs"] = 20 # this is needed in other functions 
-    reco_settings["DarkFieldValue"] = 200# this is needed in other functions 
-    reco_settings["backIlluminationValue"]= 0# this is needed in other functions 
-    reco_settings["COR"] = 1213
-    reco_settings["offset_Angle"] = 0
-    reco_settings["reco_algorithm"] = "gridrec"
-    reco_settings["filter_name"] = "shepp"
-    reco_settings["n_cores"] = 16
-    reco_settings["block_size"] = 60
-    reco_settings["pixel_size"] = 0.72
-    reco_settings["GPU"] = True 
+        reco_settings['angle_list_dir']='/entry/instrument/NDAttributes/CT_MICOS_W'# path in HDF5 file where angle list are stored
+        reco_settings["number_of_FFs"] = 20 # this is needed in other functions 
+        reco_settings["DarkFieldValue"] = 200# this is needed in other functions 
+        reco_settings["backIlluminationValue"]= 0# this is needed in other functions 
+        reco_settings["COR"] = 1213
+        reco_settings["offset_Angle"] = 0
+        reco_settings["reco_algorithm"] = "gridrec"
+        reco_settings["filter_name"] = "shepp"
+        reco_settings["n_cores"] = 16
+        reco_settings["block_size"] = 60
+        reco_settings["pixel_size"] = 0.72
+        reco_settings["GPU"] = True 
 
 
-    #save_settings  : 
-    save_settings = {}
-    save_settings["dtype"] = "float32"# or float32
-    save_settings["fileType"] = "tif"
-    save_settings["chunking"] = None
-    save_settings["save_folder"] = "D:\\shahab\\HDF\\Writer\\{}"
+        #save_settings  : 
+        save_settings = {}
+        save_settings["dtype"] = "float32"# or float32
+        save_settings["fileType"] = "tif"
+        save_settings["chunking"] = None
+        save_settings["save_folder"] = "D:\\shahab\\HDF\\Writer\\{}"
 
-    key_list = ["GPU" ,"block_size" , "save_folder" ]
-    param_list = [True, 10 , "Gpu_10"] 
-
-    def modify_setting (value):
         key_list = ["GPU" ,"block_size" , "save_folder" ]
-        for k,v in zip(key_list,value):
-            if  k == "save_folder":
-                save_settings[k]= "D:\\shahab\\HDF\\Writer\\{}".format(v)
-            else: 
-                reco_settings[k] = v
-                print ("this is my settings ")
-                print(k , v )
+        param_list = [True, 10 , "Gpu_10"] 
+
+        def modify_setting (value):
+            key_list = ["GPU" ,"block_size" , "save_folder" ]
+            for k,v in zip(key_list,value):
+                if  k == "save_folder":
+                    save_settings[k]= "D:\\shahab\\HDF\\Writer\\{}".format(v)
+                else: 
+                    reco_settings[k] = v
+                    print ("this is my settings ")
+                    print(k , v )
 
 
 
 
-    param_list = [[True, 10 , "Gpu_10"] , [True , 20 , "GPU_20"] , [True, 30 , "Gpu_30"] , [True, 50 , "Gpu_50"] ,[True, 16 , "Gpu_16"] , [True , 32 , "GPU_32"] , [True, 48 , "Gpu_48"] , [True, 64 , "Gpu_64"] ,
-    [False, 10 , "Cpu_10"] , [False , 20 , "CPU_20"] , [False, 30 , "Cpu_30"] , [False, 50 , "Cpu_50"],[False, 16 , "Cpu_16"] , [False , 32 , "CPU_32"] , [False, 48 , "Cpu_48"] , [False, 64 , "Cpu_64"] ]
+        param_list = [[True, 10 , "Gpu_10"] , [True , 20 , "GPU_20"] , [True, 30 , "Gpu_30"] , [True, 50 , "Gpu_50"] ,[True, 16 , "Gpu_16"] , [True , 32 , "GPU_32"] , [True, 48 , "Gpu_48"] , [True, 64 , "Gpu_64"] ,
+        [False, 10 , "Cpu_10"] , [False , 20 , "CPU_20"] , [False, 30 , "Cpu_30"] , [False, 50 , "Cpu_50"],[False, 16 , "Cpu_16"] , [False , 32 , "CPU_32"] , [False, 48 , "Cpu_48"] , [False, 64 , "Cpu_64"] ]
 
 
-    #param_list = [[True, 30 , "Gpu_10"] , [False , 30 , "GPU_20"] ]
+        #param_list = [[True, 30 , "Gpu_10"] , [False , 30 , "GPU_20"] ]
 
-    #test speed of GPU operation and CPU operation 
-    o_p_time = []
-    o_c_time = []
-    total_time = [ ]
-    print ('start the looooooooop')
-    for params in param_list : 
-        print('making the empty ')
-       
+        #test speed of GPU operation and CPU operation 
+        o_p_time = []
+        o_c_time = []
+        total_time = [ ]
+        print ('start the looooooooop')
+        for params in param_list : 
+            print('making the empty ')
         
-        modify_setting(params)
+            
+            modify_setting(params)
 
-        s = timer()
-        recoObject.on_the_fly_volume_reco(reco_settings,save_settings, slices_to_reco=(1, 500)) #this saves automatically the volume 
-        e = timer()
-        total_time.append(e-s)
-        print (params)
-        print(bcolors.WARNING +'copy_time : {} '.format(recoObject.copy_time) + bcolors.ENDC  )
-        print ("proccess_tiem : " ,recoObject.p_time )
+            s = timer()
+            recoObject.on_the_fly_volume_reco(reco_settings,save_settings, slices_to_reco=(1, 500)) #this saves automatically the volume 
+            e = timer()
+            total_time.append(e-s)
+            print (params)
+            print(bcolors.WARNING +'copy_time : {} '.format(recoObject.copy_time) + bcolors.ENDC  )
+            print ("proccess_tiem : " ,recoObject.p_time )
 
-        o_p_time.append(recoObject.p_time)
-        o_c_time.append(recoObject.copy_time)
-        recoObject.p_time = []
-        recoObject.copy_time = []
+            o_p_time.append(recoObject.p_time)
+            o_c_time.append(recoObject.copy_time)
+            recoObject.p_time = []
+            recoObject.copy_time = []
 
-    pd.DataFrame(param_list).to_excel("prarm.xlsx")
-    pd.DataFrame(o_p_time).to_excel("p_time.xlsx")
-    pd.DataFrame(o_c_time).to_excel("c_time.xlsx")
-    pd.DataFrame(total_time).to_excel("total_time.xlsx")
+        pd.DataFrame(param_list).to_excel("prarm.xlsx")
+        pd.DataFrame(o_p_time).to_excel("p_time.xlsx")
+        pd.DataFrame(o_c_time).to_excel("c_time.xlsx")
+        pd.DataFrame(total_time).to_excel("total_time.xlsx")
 
 
     

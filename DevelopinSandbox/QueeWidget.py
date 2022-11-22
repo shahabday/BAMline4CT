@@ -3,14 +3,15 @@ from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 from PyQt5 import QtGui as qtg
 
-from dataclasses import dataclass
+#import all Ui files 
 
 from Ui_files.QueeWidget_ui import Ui_QueeWidget
+from Ui_files.SelectSettingsWidget import SelectSettingsDialog
+from Ui_files.TableDialog import TableDialog
 
+#import other modules
 from  CT_file_setting import CT_file_setting
-
 from projection_import import *
-
 from reconstruct import *
 
 import os
@@ -43,6 +44,7 @@ class QueeWidget(qtw.QWidget):
         self.ui.btn_settings.clicked.connect(self.clearTree)
         self.ui.btn_copy.clicked.connect ( self.copy_all_settings)
         self.ui.btn_selected_setting.clicked.connect(self.select_settings_to_copy)
+        self.ui.btn_in_tool.clicked.connect(self.input_tool)
 
         #when an Item is clicked :
         #self.ui.treeWidget.itemClicked.connect(self.onItemClicked)
@@ -57,13 +59,68 @@ class QueeWidget(qtw.QWidget):
         #your code ends here 
         self.show()
 
-    def update_CT_file_data_class ( self): 
-            # this function updates the data classes : 
-            # what can update the settings :
-            # QTreeWidget can update which CT is selected for the final reconstruction 
-            # the pannel can also update the CT_file dataclass object 
-            # https://stackoverflow.com/questions/61426232/update-dataclass-fields-from-a-dict-in-python
-            pass 
+    def input_tool (self): 
+        #this opens the toolbox to input the data 
+
+        # prepare the data in a dictionary format for the dialoge box
+
+        settings_to_show = ["COR","first_slice", 'last_slice'] # columns of the table 
+        setting_to_show_data_type = [float , int , int]
+        
+        data = {}
+        for key in self.opened_hf_files : 
+            setting_list = []
+            ct_object  = self.opened_hf_files[key]["CT_file_setting_object"]
+            value_dic = ct_object.get_values(settings_to_show)
+            for setting in settings_to_show:
+                #None values are not allowed 
+                value = value_dic[setting]
+
+                if value is None:
+                    value = 0
+                value = str(value)
+                #all values should be converted to string 
+                setting_list.append(value) # makes the list of values from CT setting 
+
+            data[key] = setting_list
+
+        
+        print(data)
+
+        #cols = ["setting1" , "setting2", ... ]
+        #data= {"file_id" : [setting1 , setting2 , ... ]}
+
+        # show the dialoge box
+
+        dialog_edit = TableDialog(data,settings_to_show)
+        dialog_edit.show()
+        
+        # get data from dialoge box
+        if dialog_edit.exec_():
+            edited_data = dialog_edit.submitedData
+            #{"filename":[list of edited settings in string ]}
+            print(edited_data)
+            
+        # prepare data in CT setting object format and update the tree
+        for key in edited_data : 
+            #first prepare a value dic with right data type
+            value_dic = {}
+            for index,(setting,type) in enumerate(zip(settings_to_show ,setting_to_show_data_type )): 
+                value_dic[setting] = type(edited_data[key][index])
+
+            # update the CT file setting objects 
+            self.opened_hf_files[key]["CT_file_setting_object"].update(value_dic)
+
+        #update the tree view : 
+        # call function for updating the Tree here 
+        CT_setting_list = [i["CT_file_setting_object"] for i in self.opened_hf_files.values()]
+        self.clearTree()
+        self.updateTree(CT_setting_list)
+
+
+
+
+
 
     def clearTree (self):
         # implement a function to clear up the tree
@@ -90,11 +147,11 @@ class QueeWidget(qtw.QWidget):
                 elif ct.selected == True : 
                     item.setCheckState(0, qtc.Qt.Checked) # this should be changed based on the data class 
                 #select what properties you want to show : 
-                to_show = ["COR" , 
+                to_show = ["COR" , "angle_list_dir",
                 'reco_algorithm' , 'filter_name', 'n_cores', 'block_size', 
                 'dtype' , 'fileType', 'chunking_x', 'chunking_y',
                 'intensity_low', 'intensity_high',
-                "save_folder", "first_slice", 'last_slice','ring_radius'
+                "save_folder", "first_slice", 'last_slice','ring_radius',"speed_w"
                 
                 
                  ]
@@ -173,10 +230,22 @@ class QueeWidget(qtw.QWidget):
         #DadkFieldVlau
         #backIlluminationValue 
 
-        CT_file_setting_object  = CT_file_setting(file_name = Projection.filename , folder_name=Projection.directory )
+        volume_path_in_hdf = "/entry/data/data"
+        angle_list_path_in_hdf = '/entry/instrument/NDAttributes/CT_MICOS_W'
+        angle_list_path_in_hdf = '/something/fake/to/test'
 
-        metadata = Projection.openFile(volume = "/entry/data/data" , metadata = ['/entry/instrument/NDAttributes/CT_MICOS_W'])
-        print (metadata)
+        CT_file_setting_object  = CT_file_setting(file_name = Projection.filename , folder_name=Projection.directory , angle_list_dir=angle_list_path_in_hdf)
+        
+        _,metadata = Projection.openFile(volume = volume_path_in_hdf , metadata = [angle_list_path_in_hdf])
+        print("******metadata**********")
+
+        # Projection file returns a dictionary for each metadat in the metadata_list that we pass on to it 
+        # if the metadata doesnt exists in the path that we asked for it returns: 
+        # metadata_dic[path_input_that_doesnt_exists] = "Not exists"
+        if metadata[angle_list_path_in_hdf] == "Not exists":
+            CT_file_setting_object.manual_speed = True 
+            #default value for manaul speed in CT setting object is True 
+
         return {"projection_object" : Projection , "CT_file_setting_object" : CT_file_setting_object } 
 
     def open_projection_files (self):
@@ -211,9 +280,9 @@ class QueeWidget(qtw.QWidget):
 
         self.updateTree(CT_setting_list)
         
-        print ( " opened hf files : ************ THIS should be removed for the final release **********")
         #move this to logg :
-        print(self.opened_hf_files)
+        logging.info("opened hdf file : ")
+        logging.info(self.opened_hf_files)
         
 
     @qtc.pyqtSlot(qtw.QTreeWidgetItem, int)
@@ -281,6 +350,7 @@ class QueeWidget(qtw.QWidget):
 
     @qtc.pyqtSlot(object)
     def slot_updated_CT_setting (self, ctobject):
+        #recieves a signal : CT_setting_object
 
         
         
@@ -304,7 +374,7 @@ class QueeWidget(qtw.QWidget):
             "pixel_size" , "dtype" , "fileType", 
             "chunking_x" , "chunking_y" , 
             "intensity_low",  "intensity_high" , 
-            "first_slice" , "last_slice","ring_radius"
+            "first_slice" , "last_slice","ring_radius","speed_w"
         ]
         self.copy_selected_setting(settings_to_copy)
 
@@ -320,11 +390,25 @@ class QueeWidget(qtw.QWidget):
             #set up the check boxes representing all settings 
             #
             #get those settings who are checked 
-        #call the copy selected setting function 
-        print("THis is still being developed use copy all button ")
 
-        #settings_to_copy = []
-        #self.copy_selected_setting(settings_to_copy)
+        check_boxes = [ "number_of_FFs","DarkFieldValue",
+            "backIlluminationValue" , "COR" , "offset_Angle",
+            "reco_algorithm" , "filter_name" , 
+            "pixel_size" , "dtype" , "fileType", 
+            "chunking_x" , "chunking_y" , 
+            "intensity_low",  "intensity_high" , 
+            "first_slice" , "last_slice","ring_radius","speed_w"
+        ]
+        settings_to_copy =[]
+
+        dialog_select = SelectSettingsDialog(listCheckBox=check_boxes)
+        dialog_select.show()
+
+        if dialog_select.exec_():
+            settings_to_copy = dialog_select.list_of_checked_boxes
+        #call the copy selected setting function 
+
+        self.copy_selected_setting(settings_to_copy)
 
         
     def copy_selected_setting ( self , settings_to_copy ):
@@ -401,8 +485,10 @@ class QueeWidget(qtw.QWidget):
         reco_settings={}
         save_settings = {}
 
+        #manual speed if True, then the speed_w which is inputed by user will be used for reconstruction 
+        #in case manaul speed is False , speed_w will be automatically calculated using the angle list dir 
         
-        reco_parameters = [   'angle_list_dir',
+        reco_parameters = [   'angle_list_dir',"manual_speed",
         "number_of_FFs",
         "DarkFieldValue",
         "backIlluminationValue",
@@ -415,13 +501,16 @@ class QueeWidget(qtw.QWidget):
         "pixel_size",
         "GPU",
         "slice_range",
-        "ring_radius"
+        "ring_radius",
+        "speed_w"
                
         ]
 
         save_parameteres = [ "dtype",
         "fileType",
         "chunking",
+        "intensity_low",
+        "intensity_high",
         "save_folder"]
 
         reco_settings=ctobject.get_values( reco_parameters)

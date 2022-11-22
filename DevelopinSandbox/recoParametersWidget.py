@@ -37,14 +37,13 @@ class recoParametersWidget(qtw.QWidget):
         self.ui.setupUi(self)
 
         #connecting buttons and signals 
-        self.ui.btn_send_settings.clicked.connect(self.send_data)
-        self.ui.btn_get_setting.clicked.connect(self.recieve_data)
+        self.ui.btn_send_settings.clicked.connect(self.update_and_send_current_CT_setting)
         self.ui.btn_test_reco.clicked.connect(self.reco_one_slice)
         
 
         self.create_control_dict() # can acess values of the GUI control
         self.connected_to_imageJ = False 
-        self.epics_channel_name = 'CT4D'
+        self.epics_channel_name = 'CT4D3'
 
 
         #this will be eliminated in final version : 
@@ -199,7 +198,7 @@ class recoParametersWidget(qtw.QWidget):
             return "checkbox"
 
 
-    def send_data (self , selected_widgets=None) : 
+    def read_controls_data (self , selected_widgets=None) : 
         # this reads all data from widgets and pack it in a dictionary 
         # this dictionary will be returned and can be sent to other controls 
         # or it could be used to update CT_file_setting class 
@@ -276,6 +275,38 @@ class recoParametersWidget(qtw.QWidget):
         
         self.current_file_name = list(data.keys())[0]
         self.current_loaded_data = data
+
+
+    def update_and_send_current_CT_setting(self):
+        #this functinos does update_and_send_current_CT_setting
+        #first read the changes from all controls in the GUI
+        
+        read_data ={} 
+        
+        #controls in GUI that we want their settings read 
+        widget_names = ["number_of_FFs","DarkFieldValue",
+         "slice_number","backIlluminationValue" ,"COR","offset_Angle",
+          "angle_range","reco_algorithm","filter_name","pixel_size", "ring_radius" , 
+
+          "fileType" , 'dtype' , "chunking_x" ,"chunking_y" ,
+          "intensity_low" , "intensity_high" , "first_slice" , "last_slice"
+
+        ]
+
+
+        for key in widget_names : 
+            #reco_setting[key] = self.send_data(key) #send data , sends ditionary
+            read_data.update(self.read_controls_data(key))
+
+        #update the current CT_setting object 
+        
+        self.CT_setting_object.update(read_data)
+
+        #emit a signal with the updated CT_Setting object :
+
+        self.CT_setting_updated_signal.emit(self.CT_setting_object)
+
+
 
     """
     ////////////////////////////////////////// Section II /////////////////////////////////////
@@ -404,7 +435,7 @@ class recoParametersWidget(qtw.QWidget):
 
             #fill all NONE values with values from GUI
             #now update CT_setting_file with GUI data 
-            new_dic = self.send_data()
+            new_dic = self.read_controls_data()
             self.current_loaded_data["CT_file_setting_object"].update(new_dic)
 
         #3. pass to reco one slice : 
@@ -426,7 +457,6 @@ class recoParametersWidget(qtw.QWidget):
     def reco_one_slice (self): 
         
         
-        
         reco_setting ={} 
         
         #some settings are read from controls 
@@ -435,22 +465,30 @@ class recoParametersWidget(qtw.QWidget):
           "angle_range","reco_algorithm","filter_name","pixel_size", "ring_radius" , 
 
           "fileType" , 'dtype' , "chunking_x" ,"chunking_y" ,
-          "intensity_low" , "intensity_high" , "first_slice" , "last_slice"
+          "intensity_low" , "intensity_high" , "first_slice" , "last_slice","speed_w"
 
         ]
 
 
-
         for key in widget_names : 
             #reco_setting[key] = self.send_data(key) #send data , sends ditionary
-            reco_setting.update(self.send_data(key))
+            reco_setting.update(self.read_controls_data(key))
 
         #some settings will be read from elsewhere : 
         reco_setting['angle_list_dir'] = self.CT_setting_object.angle_list_dir
         reco_setting["extend_FOV_fixed_ImageJ_Stream"] = 0.25
 
-
+        # reconstruct
         slice = self.recoObject.on_the_fly_one_slice(reco_setting)
+
+        if self.recoObject.angle_list_exists : 
+            #update speed W :
+            print("update the speed W******************")
+            print(self.recoObject.speed_W)
+            self.update_controls({"speed_w"  : self.recoObject.speed_W})
+            self.ui.speed_W.setValue(self.recoObject.speed_W)
+            reco_setting.update(self.read_controls_data("speed_w"))
+            
 
         
         #3. updates the CT_setting values with GUI values . 
@@ -461,7 +499,7 @@ class recoParametersWidget(qtw.QWidget):
         
 
         #self.display_image(slice)
-        self.ui.txt_console.append('Image sent . . . {}'.format(reco_setting["slice_number"]))
+        self.ui.txt_console.append('Slice number {} was sent ...'.format(reco_setting["slice_number"]))
         self.send_to_imageJ(slice )
         #enable controls 
         to_enable  = [

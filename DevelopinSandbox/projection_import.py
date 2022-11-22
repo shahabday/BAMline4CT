@@ -93,19 +93,39 @@ class ProjectionFile:
         path to the selected metadata
             this could be more than one. 
             this is a list of metadata
+        in case no kwargs of metadata is passed or if the path doesnt exist in hdf5 file :
+            metadata doesnt exist  : 
+                self.metadata_exists = False 
+                self.metadata_dic = "Not exists"
+
+
         
         '''
 
         volume_path = kwargs["volume"]
-        metadata_paths = kwargs["metadata"]
+        if "metadata" in kwargs:
+            metadata_paths = kwargs["metadata"]
+            self.metadata_exists = True
+        else : 
+            self.metadata_exists = False
         
         f = h5py.File(self.fullPath, 'r')
         self.vol_proxy = f[volume_path]
         print('volume opened successfully : data shape: ', self.vol_proxy.shape)
 
+        
         self.metadata_dic = {}
-        for metadata in metadata_paths :
-            self.metadata_dic[metadata] = f[metadata]
+        if self.metadata_exists:
+            for metadata in metadata_paths :
+                try : 
+                    self.metadata_dic[metadata] = f[metadata]
+                    
+                except : 
+                    
+                    self.metadata_dic[metadata] = "Not exists"        
+        else : 
+            self.metadata_exists =False
+            self.metadata_dic = "Not exists"
 
         return self.vol_proxy, self.metadata_dic
 
@@ -239,14 +259,16 @@ class FileWrite:
 if __name__ == '__main__':
     import numpy as np
     
-    if False : 
+    if True : 
 
         test = ProjectionFile("A:\\BAMline-CT\\2022\\2022_03\\Pch_21_09_10\\220317_1754_95_Pch_21_09_10_____Z40_Y8300_42000eV_10x_250ms\\220317_1754_95_00001.h5")
         print (test.file_extension)
         print(test.filename)
         print(test.directory)
         print(test.type)
-        metadata = test.openFile(volume = "/entry/data/data" , metadata = ['/entry/instrument/NDAttributes/CT_MICOS_W'])
+        metadata = test.openFile(volume = "/entry/data/data" , metadata = ['/entry/instrument/NDadfAttributes/CT_MICOS_W'])
+        test.openFile(volume = "/entry/data/data" )
+
         print (metadata)
 
         #self.line_proxy = f['/entry/instrument/NDAttributes/CT_MICOS_W']
@@ -255,12 +277,12 @@ if __name__ == '__main__':
 
         vol = test.vol_proxy [1:20,:,:]
 
-        writer = FileWrite("D:\\shahab\\HDF\\Writer")
-        writer.write_hdf_volume(vol, "firsttest5.h5")
-        writer.write_hdf_volume(vol,"firsttest5.h5" )
-        writer.write_hdf_metadata("metadata", "firsttest5.h5" , "/meta")
-        writer.folder = "D:\\shahab\\HDF\\Writer\\tiff"
-        writer.saveTiff_volume(vol, "projection" , ind_offset=5 , type = "uint16")
+        #writer = FileWrite("D:\\shahab\\HDF\\Writer")
+        #writer.write_hdf_volume(vol, "firsttest5.h5")
+        #writer.write_hdf_volume(vol,"firsttest5.h5" )
+        #writer.write_hdf_metadata("metadata", "firsttest5.h5" , "/meta")
+        #writer.folder = "D:\\shahab\\HDF\\Writer\\tiff"
+        #writer.saveTiff_volume(vol, "projection" , ind_offset=5 , type = "uint16")
     else: 
         writer = FileWrite("E:\\sdayani\\HDFmetadataTest")
         vol = np.zeros(shape=(10,10,10))
