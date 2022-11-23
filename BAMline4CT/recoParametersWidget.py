@@ -527,7 +527,9 @@ class recoParametersWidget(qtw.QWidget):
 
 
     def connect_to_ImageJ (self):
-        if self.connected_to_imageJ == False : 
+        #if channel name is changed , create a new connection
+        
+        if (self.connected_to_imageJ == False) or (self.epics_channel_name != self.appSetting.epics_channel_name) : 
             self.epics_channel_name = self.appSetting.epics_channel_name 
 
             
