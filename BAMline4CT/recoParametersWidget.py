@@ -28,7 +28,7 @@ class recoParametersWidget(qtw.QWidget):
     CT_setting_updated_signal = qtc.pyqtSignal(object)
 
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self,appSetting, *args, **kwargs):
         super().__init__(*args, **kwargs)
         #your code will go here 
 
@@ -41,9 +41,10 @@ class recoParametersWidget(qtw.QWidget):
         self.ui.btn_test_reco.clicked.connect(self.reco_one_slice)
         
 
+        self.appSetting = appSetting
         self.create_control_dict() # can acess values of the GUI control
         self.connected_to_imageJ = False 
-        self.epics_channel_name = 'CT4D3'
+        self.epics_channel_name = self.appSetting.epics_channel_name
 
 
         #this will be eliminated in final version : 

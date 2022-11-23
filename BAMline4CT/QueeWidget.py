@@ -23,6 +23,8 @@ class QueeWidget(qtw.QWidget):
 
     #signal for emiting clicked item data : 
     item_selected_signal = qtc.pyqtSignal(object)
+    open_settings = qtc.pyqtSignal(bool)
+
 
 
     def __init__(self, appSetting, *args, **kwargs):
@@ -62,7 +64,8 @@ class QueeWidget(qtw.QWidget):
         self.show()
 
     def settings(self):
-        print(self.appSetting)
+        #signals Open Setting dialogue 
+        self.open_settings.emit(True)
 
 
 

@@ -24,7 +24,7 @@ from recoParametersWidget import recoParametersWidget
 
 
 from appSetting import appSetting
-
+from settingsWidget import settingsWidget
 
 
 class MainWindow(qtw.QMainWindow):
@@ -45,10 +45,10 @@ class MainWindow(qtw.QMainWindow):
 
         self.queeWidget = QueeWidget(self.app_setting,  parent = self.ui.rightUpper)
         self.ui.verticalLayout_4.addWidget(self.queeWidget)
-        #self.queeWidget.appSetting = self.app_setting
+        
   
 
-        self.recoParametersWidget = recoParametersWidget(self.ui.leftPannel)
+        self.recoParametersWidget = recoParametersWidget(self.app_setting, parent = self.ui.leftPannel)
         self.ui.verticalLayout_2.addWidget(self.recoParametersWidget)
 
         #create variables 
@@ -57,6 +57,7 @@ class MainWindow(qtw.QMainWindow):
 
         #connect signals and slots : 
         self.queeWidget.item_selected_signal.connect(self.recoParametersWidget.slot_recieve_data)
+        self.queeWidget.open_settings.connect(self.open_setting_window)
         self.recoParametersWidget.CT_setting_updated_signal.connect(self.queeWidget.slot_updated_CT_setting)
 
         
@@ -66,18 +67,29 @@ class MainWindow(qtw.QMainWindow):
 
 
     def open_setting_window(self):
-        #send current app setting to the setting window 
-        #open the window 
-        # hide main window ?
-        # when the dialogue is finished , send the new app setting to all widgets (emit signal updated settings)
+        #open setting window with current saved settings 
+        self.setting_widget = settingsWidget(self.app_setting,parent=None)
+        self.setting_widget.setting_changed_signal.connect(self.apply_settings)
+        self.setting_widget.show()
+        #update the current settings into self.app_setting
 
-        pass
+        #call apply settings 
 
-    def apply_settings (self): 
+        
+    
+
+
+    # a slot for when the setting is changed 
+    @qtc.pyqtSlot(object)
+    def apply_settings (self, appSetting): 
         #apply the settings to all widgets which need it . 
         # all widgets will be having an appSetting object that will be updated 
-        pass 
-    
+        self.apply_settings = appSetting
+        print("recieved app setting and updated and sent to all widgets")
+        self.queeWidget.appSetting = self.app_setting
+        self.recoParametersWidget.appSetting = self.app_setting
+        
+
     
 
 
