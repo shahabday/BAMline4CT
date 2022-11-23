@@ -43,7 +43,7 @@ class recoParametersWidget(qtw.QWidget):
 
         self.create_control_dict() # can acess values of the GUI control
         self.connected_to_imageJ = False 
-        self.epics_channel_name = 'CT4D'
+        self.epics_channel_name = 'CT4D3'
 
 
         #this will be eliminated in final version : 
@@ -465,7 +465,7 @@ class recoParametersWidget(qtw.QWidget):
           "angle_range","reco_algorithm","filter_name","pixel_size", "ring_radius" , 
 
           "fileType" , 'dtype' , "chunking_x" ,"chunking_y" ,
-          "intensity_low" , "intensity_high" , "first_slice" , "last_slice"
+          "intensity_low" , "intensity_high" , "first_slice" , "last_slice","speed_w"
 
         ]
 
@@ -480,6 +480,15 @@ class recoParametersWidget(qtw.QWidget):
 
         # reconstruct
         slice = self.recoObject.on_the_fly_one_slice(reco_setting)
+
+        if self.recoObject.angle_list_exists : 
+            #update speed W :
+            print("update the speed W******************")
+            print(self.recoObject.speed_W)
+            self.update_controls({"speed_w"  : self.recoObject.speed_W})
+            self.ui.speed_W.setValue(self.recoObject.speed_W)
+            reco_setting.update(self.read_controls_data("speed_w"))
+            
 
         
         #3. updates the CT_setting values with GUI values . 

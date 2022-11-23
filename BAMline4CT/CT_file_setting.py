@@ -31,6 +31,7 @@ class CT_file_setting:
     backIlluminationValue : int  = None# this is needed in other functions 
 
     #reconstruction settings :
+    manual_speed : bool = False # when we have to adjust speed of rotation manually
     slice_number : int = None
     COR : float = None
     offset_Angle : float = None 
@@ -53,8 +54,8 @@ class CT_file_setting:
 
     chunking_x : int = None
     chunking_y : int = None 
-    intensity_low : float = None
-    intensity_high : float = None
+    intensity_low : int = None
+    intensity_high : int = None
     save_folder : str = None 
     first_slice : int = None
     last_slice : int   = None 

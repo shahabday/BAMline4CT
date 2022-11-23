@@ -579,8 +579,6 @@ class Reconstruction:
                         its a tuple (first_slice, last_slice)
         reco_settings :
         reco_settings['angle_list_dir'] # path in HDF5 file where angle list are stored
-        reco_settings['manual_speed'] : bool , if True, calculations will be based on user input speed_w
-        reco_settings['speed_w']
         reco_settings["number_of_FFs"] # this is needed in other functions 
         reco_settings["DarkFieldValue"]# this is needed in other functions 
         reco_settings["backIlluminationValue"]# this is needed in other functions 
@@ -664,21 +662,13 @@ class Reconstruction:
         image_width = self.FileObject.vol_proxy.shape[2]
         self.extend_FOV = (2 * (abs(COR - image_width/2))/ (image_width)) + 0.15
 
-
+        #calculate speed W
+        angle_list = self.FileObject.metadata_dic[angle_list_dir]
+        self.calculate_rotation_speed(angle_list)
+        #calculate last zero projection ; 
+        self.calculate_last_zero_projection(angle_list)
         
-
-        self.manual_speed = reco_settings["manual_speed"] # bool variable 
-
-        if not self.manual_speed :# if manual_speed is False, calculations of speed w will be automatically done : 
-            #calculate speed W
-            angle_list = self.FileObject.metadata_dic[angle_list_dir]
-            self.calculate_rotation_speed(angle_list)
-            #calculate last zero projection ; 
-            self.calculate_last_zero_projection(angle_list)
         
-        else:
-            self.speed_W = reco_settings['speed_w']
-
         #calculate number of projections 
         # using FFs we should calculate number of projectiosn 
         self.number_of_projections = self.FileObject.vol_proxy.shape[0] - 2*self.number_of_FFs
@@ -690,11 +680,6 @@ class Reconstruction:
             #('smaller than 3/2 Pi')
             self.number_of_used_projections = round(180 / self.speed_W)
         logging.info('number of used projections {}'.format( self.number_of_used_projections))
-
-        #if manual speed is being used : we have to calculate last zero projection : 
-        if self.manual_speed: 
-            self.last_zero_proj = self.number_of_projections - self.number_of_used_projections
-            
 
         #create list with projection angles
         new_list = (np.arange(self.number_of_used_projections) * self.speed_W + Offset_Angle) * np.pi / 180
