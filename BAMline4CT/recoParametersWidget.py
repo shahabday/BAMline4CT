@@ -56,7 +56,7 @@ class recoParametersWidget(qtw.QWidget):
         #your code ends here 
         self.show()
 
-
+    
 
 
     def create_control_dict (self):
@@ -528,6 +528,8 @@ class recoParametersWidget(qtw.QWidget):
 
     def connect_to_ImageJ (self):
         if self.connected_to_imageJ == False : 
+            self.epics_channel_name = self.appSetting.epics_channel_name 
+
             
             self.IJ_connection=ImageJViewer(channel_name=self.epics_channel_name)
             logging.info('connection to EPICS Created ')
