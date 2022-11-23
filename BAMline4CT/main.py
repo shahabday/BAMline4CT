@@ -68,12 +68,18 @@ class MainWindow(qtw.QMainWindow):
 
     def open_setting_window(self):
         #open setting window with current saved settings 
-        self.setting_widget = settingsWidget(self.app_setting,parent=None)
-        self.setting_widget.setting_changed_signal.connect(self.apply_settings)
-        self.setting_widget.show()
+
+        # check if already exists : 
+        if not hasattr(self, "setting_widget"):
+            self.setting_widget = settingsWidget(self.app_setting,parent=None)
+            self.setting_widget.setting_changed_signal.connect(self.apply_settings)
+            self.setting_widget.show()
+        else :
+            self.setting_widget.app_setting = self.app_setting
+            self.setting_widget.show()
         #update the current settings into self.app_setting
 
-        #call apply settings 
+        
 
         
     
