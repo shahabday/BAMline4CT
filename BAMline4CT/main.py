@@ -35,10 +35,17 @@ class MainWindow(qtw.QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
+        #create an app setting with default variables stored in the Class
+        self.app_setting = appSetting() # default values are created 
+        #send app_settings to all widgets:
+        #   should send it as a signal and write the proper slot function in the widgets to deal with app settings
+        #   connect the signal and slots here bellow for all 
+
         #add QueeWidget and recoParametersWidget to main window
 
-        self.queeWidget = QueeWidget(self.ui.rightUpper)
+        self.queeWidget = QueeWidget(self.app_setting,  parent = self.ui.rightUpper)
         self.ui.verticalLayout_4.addWidget(self.queeWidget)
+        #self.queeWidget.appSetting = self.app_setting
   
 
         self.recoParametersWidget = recoParametersWidget(self.ui.leftPannel)
@@ -46,11 +53,7 @@ class MainWindow(qtw.QMainWindow):
 
         #create variables 
 
-        #create an app setting with default variables stored in the Class
-        self.app_setting = appSetting()
-        #send app_settings to all widgets:
-        #   should send it as a signal and write the proper slot function in the widgets to deal with app settings
-        #   connect the signal and slots here bellow for all 
+        
 
         #connect signals and slots : 
         self.queeWidget.item_selected_signal.connect(self.recoParametersWidget.slot_recieve_data)
@@ -70,6 +73,11 @@ class MainWindow(qtw.QMainWindow):
 
         pass
 
+    def apply_settings (self): 
+        #apply the settings to all widgets which need it . 
+        # all widgets will be having an appSetting object that will be updated 
+        pass 
+    
     
 
 

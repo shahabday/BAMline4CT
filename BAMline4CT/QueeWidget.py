@@ -33,20 +33,20 @@ class QueeWidget(qtw.QWidget):
         self.ui = Ui_QueeWidget()
         self.ui.setupUi(self)
 
-        print(appSetting)
-
+        
         #creating variables : 
         self.loaded_files_id = [] # this list keeps id of all loaded files 
         self.opened_hf_files = {} # this contains opened files and their settings 
-
+        self.appSetting = appSetting
 
         #connecting buttons and signals 
         self.ui.btn_import.clicked.connect(self.open_projection_files)
         self.ui.btn_reco.clicked.connect(self.reconstruct_all)
-        self.ui.btn_settings.clicked.connect(self.clearTree)
+        self.ui.btn_settings.clicked.connect(self.settings)
         self.ui.btn_copy.clicked.connect ( self.copy_all_settings)
         self.ui.btn_selected_setting.clicked.connect(self.select_settings_to_copy)
         self.ui.btn_in_tool.clicked.connect(self.input_tool)
+        
 
         #when an Item is clicked :
         #self.ui.treeWidget.itemClicked.connect(self.onItemClicked)
@@ -60,6 +60,11 @@ class QueeWidget(qtw.QWidget):
 
         #your code ends here 
         self.show()
+
+    def settings(self):
+        print(self.appSetting)
+
+
 
     def input_tool (self): 
         #this opens the toolbox to input the data 
@@ -232,8 +237,8 @@ class QueeWidget(qtw.QWidget):
         #DadkFieldVlau
         #backIlluminationValue 
 
-        volume_path_in_hdf = "/entry/data/data"
-        angle_list_path_in_hdf = '/entry/instrument/NDAttributes/CT_MICOS_W'
+        volume_path_in_hdf = self.appSetting.volume_path_in_hdf
+        angle_list_path_in_hdf = self.appSetting.angle_list_path_in_hdf
         #angle_list_path_in_hdf = '/something/fake/to/test'
 
         CT_file_setting_object  = CT_file_setting(file_name = Projection.filename , folder_name=Projection.directory , angle_list_dir=angle_list_path_in_hdf)
